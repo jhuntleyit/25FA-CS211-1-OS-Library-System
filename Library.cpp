@@ -5,7 +5,7 @@
  * Authors: Serif Nguyen & Jonathan Huntley
  * Version 0.6
  * Previous Version: 0.5
- * Date: December 08, 2025
+ * Date: December 15, 2025
  * 
  * Description:
  *  A simple library management system that allows users to add, list,
@@ -30,6 +30,11 @@
  * ./Library
  * -----------------------
  * Change Log:
+ * 
+ *  - 0.8 (December 15, 2025)
+ *
+ * - Revised the code to make the PolyMorphism and Inheritance Functions more Obvious.
+ *
  *
  * - 0.5 (December 08, 2025):
  *
