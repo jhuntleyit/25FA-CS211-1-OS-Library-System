@@ -1,7 +1,7 @@
 /*
  * File: Library.cpp
  * Authors: Serif Nguyen & Jonathan Huntley
- * Version 0.6
+ * Version 0.8
  * Previous Version: 0.5
  * Date: December 08, 2025
  * 
@@ -28,6 +28,9 @@
  * ./Library
  * -----------------------
  * Change Log:
+ * - 0.8
+ *
+ * - Revised the code to make the PolyMorphism and Inheritance Functions more Obvious.
  * 
  * - 0.5 (December 08, 2025):
  * 
