@@ -2,7 +2,7 @@
  * File: Library.cpp
  * Authors: Serif Nguyen & Jonathan Huntley
  * Version 0.6
- * Previous Version: 0.5
+ * Previous Version: 0.8
  * Date: December 08, 2025
  * 
  * Description:
@@ -42,6 +42,7 @@
  * - Added in a Seeding Function to populate the CSV from 1 if empty. 
  * - 0.5 (December 10, 2025):
  * - Improved code legibility 
+ * - Made the PolyMorphism and Inheritance Functions more Obvious.
  * -----------------------
  * Known Issues:
  * - None at this time.
@@ -59,26 +60,21 @@
 using namespace std;
 
 /* ------------------------
- * Class: Book
+ * Base Class: LibraryItem
  * ------------------------
  */
-class Book {
-private:
+class LibraryItem {
+protected:
     int id;
     string title;
     string author;
     bool isCheckedOut;
 
-    static string trim(const string& s) {
-        size_t start = s.find_first_not_of(" \t");
-        size_t end = s.find_last_not_of(" \t");
-        if (start == string::npos || end == string::npos) return "";
-        return s.substr(start, end - start + 1);
-    }
-
 public:
-    Book(int id, string title, string author, bool isCheckedOut = false)
+    LibraryItem(int id, string title, string author, bool isCheckedOut = false)
         : id(id), title(std::move(title)), author(std::move(author)), isCheckedOut(isCheckedOut) {}
+
+    virtual ~LibraryItem() = default;
 
     int getId() const { return id; }
     string getTitle() const { return title; }
@@ -88,10 +84,30 @@ public:
     void checkOut() { isCheckedOut = true; }
     void checkIn() { isCheckedOut = false; }
 
-    string serialize() const {
+    virtual string serialize() const {
         ostringstream oss;
         oss << id << ", " << title << ", " << author << ", " << (isCheckedOut ? "Yes" : "No");
         return oss.str();
+    }
+
+    virtual void print() const = 0;
+};
+
+/* ------------------------
+ * Subclass: Book
+ * ------------------------
+ */
+class Book : public LibraryItem {
+public:
+    Book(int id, string title, string author, bool isCheckedOut = false)
+        : LibraryItem(id, std::move(title), std::move(author), isCheckedOut) {}
+
+    void print() const override {
+        cout << "Book ID: " << id
+             << " | Title: " << title
+             << " | Author: " << author
+             << " | Status: " << (isCheckedOut ? "Checked Out" : "Available")
+             << endl;
     }
 
     static Book deserialize(const string& line) {
@@ -100,72 +116,23 @@ public:
         vector<string> parts;
 
         while (getline(iss, token, ',')) {
-            parts.push_back(trim(token));
+            size_t start = token.find_first_not_of(" \t");
+            size_t end = token.find_last_not_of(" \t");
+            if (start == string::npos || end == string::npos) parts.push_back("");
+            else parts.push_back(token.substr(start, end - start + 1));
         }
 
-        if (parts.size() != 4) {
-            throw runtime_error("Invalid book data format.");
-        }
-
+        if (parts.size() != 4) throw runtime_error("Invalid book data format.");
         int id = stoi(parts[0]);
         string title = parts[1];
         string author = parts[2];
         bool isCheckedOut = (parts[3] == "Yes");
-
         return Book(id, title, author, isCheckedOut);
-    }
-
-    void print() const {
-        cout << "Book ID: " << id
-             << " | Title: " << title
-             << " | Author: " << author
-             << " | Status: " << (isCheckedOut ? "Checked Out" : "Available")
-             << endl;
     }
 };
 
 /* ------------------------
- * File Operations
- * ------------------------
- */
-vector<Book> loadBooks(const string& filename) {
-    vector<Book> books;
-    ifstream infile(filename);
-    string line;
-
-    while (getline(infile, line)) {
-        if (line.empty()) continue;
-        try {
-            books.push_back(Book::deserialize(line));
-        } catch (...) {
-            cerr << "Skipping invalid line: " << line << endl;
-        }
-    }
-    return books;
-}
-
-void saveBook(const string& filename, const Book& book) {
-    ofstream outfile(filename, ios::app);
-    if (!outfile) {
-        cerr << "Error: Could not open " << filename << " for writing.\n";
-        return;
-    }
-    outfile << book.serialize() << endl;
-}
-
-void overwriteDatabase(const string& filename, const vector<Book>& books) {
-    ofstream outfile(filename, ios::trunc);
-    if (!outfile) {
-        cerr << "Error: Could not open " << filename << " for writing.\n";
-        return;
-    }
-    for (const auto& b : books) {
-        outfile << b.serialize() << endl;
-    }
-}
-
-/* ------------------------
- * Seeding Function
+ * Utility: Seeding Function
  * ------------------------
  */
 bool fileIsEmpty(const string& filename) {
@@ -214,74 +181,111 @@ void seedLibrary(const string& filename) {
 }
 
 /* ------------------------
- * Utility Functions
+ * Manager Class: Library
  * ------------------------
  */
-void listBooks(const string& filename) {
-    vector<Book> books = loadBooks(filename);
+class Library {
+private:
+    string filename;
+    vector<LibraryItem*> items;
 
-    if (books.empty()) {
-        cout << "\nNo books in the library yet." << endl;
-        return;
+public:
+    explicit Library(string file) : filename(std::move(file)) {
+        seedLibrary(filename); // ensure seeding happens first
+        loadBooks();
     }
 
-    cout << "\nBooks in the library:" << endl;
-    for (const auto& b : books) {
-        b.print();
+    ~Library() {
+        for (auto* item : items) delete item;
     }
-}
 
-int getNextId(const string& filename) {
-    vector<Book> books = loadBooks(filename);
-    int maxId = 0;
-    for (const auto& b : books) {
-        maxId = max(maxId, b.getId());
-    }
-    return maxId + 1;
-}
-
-bool updateBookStatus(const string& filename, int id, bool checkOut) {
-    vector<Book> books = loadBooks(filename);
-    bool found = false;
-
-    for (auto& b : books) {
-        if (b.getId() == id) {
-            if (checkOut) b.checkOut();
-            else b.checkIn();
-            found = true;
-            break;
+    void loadBooks() {
+        items.clear();
+        ifstream infile(filename);
+        string line;
+        while (getline(infile, line)) {
+            if (!line.empty()) {
+                try {
+                    items.push_back(new Book(Book::deserialize(line)));
+                } catch (...) {
+                    cerr << "Skipping invalid line: " << line << endl;
+                }
+            }
         }
     }
 
-    if (found) {
-        overwriteDatabase(filename, books);
-        cout << "\nUpdated book with ID " << id << " to "
-             << (checkOut ? "Checked Out" : "Available") << "." << endl;
-    } else {
-        cout << "\nError: Book with ID " << id << " not found." << endl;
+    void addBook(const string& title, const string& author) {
+        if (title.empty() || author.empty()) {
+            cout << "Error: Title and author cannot be empty.\n";
+            return;
+        }
+        int id = getNextId();
+        items.push_back(new Book(id, title, author));
+        overwriteDatabase();
+        cout << "\nAdded \"" << title << "\" by " << author << " with ID " << id << "." << endl;
     }
 
-    return found;
-}
-
-bool deleteBookById(const string& filename, int id) {
-    vector<Book> books = loadBooks(filename);
-    bool found = false;
-
-    auto it = remove_if(books.begin(), books.end(),
-                        [&](const Book& b) { return b.getId() == id; });
-
-    if (it != books.end()) {
-        books.erase(it, books.end());
-        overwriteDatabase(filename, books);
-        cout << "\nDeleted book with ID " << id << " from the library." << endl;
-        found = true;
-    } else {
-        cout << "\nError: Book with ID " << id << " not found, cannot delete." << endl;
+    void listItems() const {
+        if (items.empty()) {
+            cout << "\nNo items in the library yet." << endl;
+            return;
+        }
+        cout << "\nItems in the library:" << endl;
+        for (const auto* item : items) {
+            item->print(); // Polymorphic call
+        }
+        cout << "Total items: " << items.size() << endl;
     }
 
-    return found;
-}
+    bool updateItemStatus(int id, bool checkOut) {
+        for (auto* item : items) {
+            if (item->getId() == id) {
+                if (checkOut) item->checkOut();
+                else item->checkIn();
+                overwriteDatabase();
+                cout << "\nUpdated item with ID " << id << " to "
+                     << (checkOut ? "Checked Out" : "Available") << "." << endl;
+                return true;
+            }
+        }
+        cout << "\nError: Item with ID " << id << " not found." << endl;
+        return false;
+    }
+
+    bool deleteItemById(int id) {
+        auto it = remove_if(items.begin(), items.end(),
+                            [&](LibraryItem* item) { return item->getId() == id; });
+        if (it != items.end()) {
+            for (auto itr = it; itr != items.end(); ++itr) delete *itr;
+            items.erase(it, items.end());
+            overwriteDatabase();
+            cout << "\nDeleted item with ID " << id << " from the library." << endl;
+            return true;
+        }
+        cout << "\nError: Item with ID " << id << " not found, cannot delete." << endl;
+        return false;
+    }
+
+    void overwriteDatabase() {
+        ofstream outfile(filename, ios::trunc);
+        if (!outfile) {
+            cerr << "Error: Could not open " << filename << " for writing.\n";
+            return;
+        }
+        for (const auto* item : items) {
+            outfile << item->serialize() << endl;
+        }
+    }
+
+private:
+    int getNextId() const {
+        int maxId = 0;
+        for (const auto* item : items) {
+            maxId = max(maxId, item->getId());
+        }
+        return maxId + 1;
+    }
+};
 
 /* ------------------------
  * Main Menu
@@ -289,23 +293,21 @@ bool deleteBookById(const string& filename, int id) {
  */
 int main() {
     const string filename = "library.csv";
+    Library lib(filename);
+
+    cout << "Welcome to the Polymorphic Library System!";
+
     int choice;
-
-    // Seed initial library if empty
-    seedLibrary(filename);
-
-    cout << "Welcome to the Library System!";
-
     while (true) {
         cout << "\n\n------------------------------" << endl;
         cout << "What would you like to do?" << endl;
         cout << "1. Add Book" << endl;
-        cout << "2. List Books" << endl;
-        cout << "3. Check Out Book" << endl;
-        cout << "4. Check In Book" << endl;
-        cout << "5. Delete Book" << endl;
+        cout << "2. List Items" << endl;
+        cout << "3. Check Out Item" << endl;
+        cout << "4. Check In Item" << endl;
+        cout << "5. Delete Item" << endl;
         cout << "6. Exit" << endl;
-        cout << "\nChoice: ";
+        cout << "Choice: ";
 
         if (!(cin >> choice)) {
             cin.clear();
@@ -316,55 +318,59 @@ int main() {
 
         if (choice == 1) {
             string title, author;
-            cout << "\nEnter title: ";
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            cout << "\nEnter title: ";
             getline(cin, title);
             cout << "Enter author: ";
             getline(cin, author);
-
-            int id = getNextId(filename);
-            Book newBook(id, title, author);
-            saveBook(filename, newBook);
-            cout << "\nAdded \"" << title << "\" by " << author << " with ID " << id << "." << endl;
+            lib.addBook(title, author);
 
         } else if (choice == 2) {
-            listBooks(filename);
+            lib.listItems();
 
         } else if (choice == 3) {
-            listBooks(filename);
+            lib.listItems();
             int id;
-            cout << "\nEnter the ID of the book to check out: ";
+            cout << "\nEnter the ID of the item to check out: ";
             if (!(cin >> id)) {
                 cin.clear();
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 cout << "Invalid ID.\n";
                 continue;
             }
-            updateBookStatus(filename, id, true);
+            lib.updateItemStatus(id, true);
 
         } else if (choice == 4) {
-            listBooks(filename);
+            lib.listItems();
             int id;
-            cout << "\nEnter the ID of the book to check in: ";
+            cout << "\nEnter the ID of the item to check in: ";
             if (!(cin >> id)) {
                 cin.clear();
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 cout << "Invalid ID.\n";
                 continue;
             }
-            updateBookStatus(filename, id, false);
+            lib.updateItemStatus(id, false);
 
         } else if (choice == 5) {
-            listBooks(filename);
+            lib.listItems();
             int id;
-            cout << "\nEnter the ID of the book to delete: ";
+            cout << "\nEnter the ID of the item to delete: ";
             if (!(cin >> id)) {
                 cin.clear();
                 cin.ignore(numeric_limits<streamsize>::max(), '\n');
                 cout << "Invalid ID.\n";
                 continue;
             }
-            deleteBookById(filename, id);
+            // optional confirmation
+            char confirm;
+            cout << "Are you sure you want to delete ID " << id << "? (y/n): ";
+            cin >> confirm;
+            if (confirm == 'y' || confirm == 'Y') {
+                lib.deleteItemById(id);
+            } else {
+                cout << "Delete cancelled.\n";
+            }
 
         } else if (choice == 6) {
             cout << "\nExiting program. Goodbye!" << endl;
